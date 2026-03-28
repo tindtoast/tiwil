@@ -24,16 +24,13 @@ modules:
     repos:
       - https://pkgs.tailscale.com/stable/fedora/tailscale.repo
       - https://openrazer.github.io/hardware:razer.repo
-      - https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-%OS_VERSION%.noarch.rpm
-      - https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-%OS_VERSION%.noarch.rpm
     install:
       - kitty
       - kvantum
       - neovim
       - tailscale
-      - uutils-coreutils
     remove:
-      - coreutils
+      # -
 
   - type: akmods
     base: main
