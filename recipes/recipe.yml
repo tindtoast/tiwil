@@ -24,7 +24,6 @@ modules:
     repos:
     - https://pkgs.tailscale.com/stable/fedora/tailscale.repo
     - https://openrazer.github.io/hardware:razer.repo
-    - 
     install:
       - kitty
       - kvantum
