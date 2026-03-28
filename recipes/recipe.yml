@@ -29,8 +29,6 @@ modules:
       - kvantum
       - neovim
       - tailscale
-    remove:
-      # -
 
   - type: akmods
     base: main
