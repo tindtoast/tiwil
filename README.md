@@ -11,7 +11,7 @@
 You may use this image if you wish but keep in mind, I am **not** responsible for any issues that occur when you use this. 
 
 1. Install [secureblue](https://secureblue.dev/)
-2. Trust this image temporarily
+2. Set the image to be allowed in the container policy
     ```
     run0 podman image trust set -t accept ghcr.io/tindtoast
     ```
