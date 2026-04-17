@@ -42,6 +42,7 @@ jobs:
         run: |
           images=(
               tiwil-kinoite
+              tiwil-kinoite-cool
           )
 
           failed_images=0
