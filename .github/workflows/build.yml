@@ -9,7 +9,7 @@ permissions: {}
 on:
   schedule:
     - cron:
-        "00 22 * * *"
+        "00 15 * * *"
   push:
     paths-ignore: 
       - "**.md"
