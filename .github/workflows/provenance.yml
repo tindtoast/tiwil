@@ -6,7 +6,7 @@ name: verify-provenance
 permissions: {}
 on:
   schedule:
-    - cron: "00 15 * * *" # run at 15:00 UTC every day
+    - cron: "00 17 * * *" # runs 2 hours after secureblue provenance
 
   workflow_dispatch:
 
