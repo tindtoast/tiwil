@@ -16,6 +16,7 @@ modules:
         - android-tools
         - kitty
         - neovim
+        - shellcheck
         - tailscale
         - traceroute
 
