@@ -13,13 +13,15 @@ modules:
         - https://pkgs.tailscale.com/stable/fedora/tailscale.repo
     install:
       packages:
-        - android-tools
         - kitty
         - neovim
         - raylib
-        - shellcheck
         - tailscale
         - traceroute
+
+    remove:
+      packages:
+        - vim
 
   - type: files
     files:
@@ -34,4 +36,5 @@ modules:
        - Noto Sans
        - Poppins
 
+  - type: justfiles
   - type: signing # this sets up the proper policy & signing files for signed images to work fully
