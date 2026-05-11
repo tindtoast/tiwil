@@ -7,5 +7,4 @@ install-brew-formulae:
 	fastfetch \
 	gh \
 	nmap \
-	rclone \
-	shellcheck
+	rclone

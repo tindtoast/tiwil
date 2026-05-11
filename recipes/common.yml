@@ -16,12 +16,9 @@ modules:
         - kitty
         - neovim
         - raylib
+        - shellcheck
         - tailscale
         - traceroute
-
-    remove:
-      packages:
-        - vim
 
   - type: files
     files:
