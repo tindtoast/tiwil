@@ -8,15 +8,11 @@ modules:
       # - v4l2loopback
 
   - type: dnf
-    repos:
-      files:
-        - https://pkgs.tailscale.com/stable/fedora/tailscale.repo
     install:
       packages:
         - kitty
         - neovim
         - shellcheck
-        - tailscale
         - traceroute
 
   - type: files
