@@ -1159,13 +1159,13 @@ def audit_bash_env_lockdown():
     for path in bash_env_paths:
             if not path.exists() or (not path.is_file() and not path.is_dir()):
                 unlocked_files.append(path)
-        else:
-            try:
-                immutable = "i" in command_stdout("lsattr", "-d", path).split()[0]
-            except subprocess.CalledProcessError:
-                immutable = False
-            if not immutable:
-                unlocked_files.append(path)
+            else:
+                try:
+                    immutable = "i" in command_stdout("lsattr", "-d", path).split()[0]
+                except subprocess.CalledProcessError:
+                    immutable = False
+                if not immutable:
+                    unlocked_files.append(path)
     if unlocked_files:
         status = FAIL
         rec_lines = [
