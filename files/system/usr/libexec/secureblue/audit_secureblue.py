@@ -1158,7 +1158,7 @@ def audit_bash_env_lockdown():
     unlocked_files = []
     for path in bash_env_paths:
             if not path.exists() or (not path.is_file() and not path.is_dir()):
-            unlocked_files.append(path)
+                unlocked_files.append(path)
         else:
             try:
                 immutable = "i" in command_stdout("lsattr", "-d", path).split()[0]
