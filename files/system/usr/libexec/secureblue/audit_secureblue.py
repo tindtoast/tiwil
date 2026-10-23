@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/python3 -Es
 
 # SPDX-FileCopyrightText: Copyright 2025-2026 The Secureblue Authors
 #
@@ -16,7 +16,6 @@ import getpass
 import glob
 import os
 import signal
-import stat
 import subprocess
 import sys
 import traceback
@@ -31,9 +30,9 @@ from audit_utils import (
     get_width,
     normalize_sysctl,
     validate_sysctl,
-    warn_if_root,
 )
 from auditor import (
+    Audit,
     Note,
     Report,
     Status,
@@ -45,7 +44,8 @@ from auditor import (
     global_audit,
 )
 from shared import kargs_hardening
-from utils import (
+from shared.ptrace import YAMA_DOC_URL, PtraceStatus, get_ptrace_status
+from shared.utils import (
     BootcBackend,
     Image,
     command_stdout,
@@ -56,9 +56,9 @@ from utils import (
     loaded_kernel_modules,
     ostree_booted_image_ref,
     parse_config,
+    parse_kernel_cmdline,
     print_err,
 )
-from utils.ptrace import YAMA_DOC_URL, PtraceStatus, get_ptrace_status
 
 _: Final = gettext_marker()
 
@@ -68,7 +68,9 @@ WARN: Final = Status.WARN
 FAIL: Final = Status.FAIL
 UNKNOWN: Final = Status.UNKNOWN
 
-CONFIG_FILE: Final[Path] = Path.home() / ".config/secureblue/audit.toml"
+CONFIG_FILE: Final[Path] = get_config_dir() / "secureblue/audit.toml"
+
+SKIP_IF_ROOT: Final[str] = "skip-if-root"
 
 
 @audit
@@ -78,32 +80,27 @@ def audit_kargs():
     notes = []
     rec = None
 
-    kargs_current = frozenset(Path("/proc/cmdline").read_text(encoding="utf-8").split())
-    kargs_expected = kargs_hardening.DEFAULT_KARGS
-    for karg in kargs_expected:
-        if karg not in kargs_current:
-            status = status.downgrade_to(FAIL)
-            notes.append(Note(_("Missing kernel argument: {0}").format(karg), FAIL))
+    cmdline = Path("/proc/cmdline").read_text(encoding="utf-8").rstrip()
+    kargs_active = parse_kernel_cmdline(cmdline)
 
-    karg_32bit = kargs_hardening.DISABLE_32_BIT
-    if karg_32bit not in kargs_current:
-        status = status.downgrade_to(WARN)
-        notes.append(
-            Note(_("Missing kernel argument: {0} (32-bit support)").format(karg_32bit), WARN)
-        )
+    kargs_expected: dict[str, tuple[Status, str | None]] = dict.fromkeys(
+        kargs_hardening.DEFAULT_KARGS, (FAIL, None)
+    )
+    kargs_expected[kargs_hardening.DISABLE_32_BIT] = (WARN, _("32-bit support"))
+    kargs_expected[kargs_hardening.FORCE_NOSMT] = (WARN, _("force-disable SMT"))
+    kargs_expected.update(dict.fromkeys(kargs_hardening.UNSTABLE_KARGS, (WARN, _("unstable"))))
 
-    karg_nosmt = kargs_hardening.FORCE_NOSMT
-    if karg_nosmt not in kargs_current:
-        status = status.downgrade_to(WARN)
-        notes.append(
-            Note(_("Missing kernel argument: {0} (force-disable SMT)").format(karg_nosmt), WARN)
-        )
-
-    kargs_expected_unstable = kargs_hardening.UNSTABLE_KARGS
-    for karg in kargs_expected_unstable:
-        if karg not in kargs_current:
-            status = status.downgrade_to(WARN)
-            notes.append(Note(_("Missing kernel argument (unstable): {0}").format(karg), WARN))
+    for karg, (severity, comment) in kargs_expected.items():
+        key, sep, value = karg.partition("=")
+        key = key.replace("-", "_")
+        value = value if sep else None
+        if key not in kargs_active or kargs_active[key] != value:
+            status = status.downgrade_to(severity)
+            if comment is None:
+                note_text = _("Missing kernel argument: {0}").format(karg)
+            else:
+                note_text = _("Missing kernel argument ({0}): {1}").format(comment, karg)
+            notes.append(Note(note_text, severity))
 
     if status != PASS:
         rec = _("To set hardened kernel arguments, run:") + "\n$ ujust set-kargs-hardening"
@@ -120,6 +117,7 @@ def audit_sysctl():
     sysctl_expected = parse_config(conf)
     status = PASS
     notes = []
+    permission_error = False
     for sysctl, expected in sysctl_expected.items():
         sysctl_path = f"/proc/sys/{sysctl.replace('.', '/')}"
         for path in glob.iglob(sysctl_path):
@@ -127,6 +125,8 @@ def audit_sysctl():
                 with open(path, encoding="utf-8") as f:
                     actual = normalize_sysctl(f.read())
             except PermissionError:
+                status = status.downgrade_to(INFO)
+                permission_error = True
                 continue
             if sysctl == "kernel.printk" and actual == "15 3 3 3":
                 status = WARN
@@ -149,6 +149,10 @@ def audit_sysctl():
                     )
                 )
                 break
+    if permission_error:
+        notes.append(
+            Note(_("Unable to read some sysctl settings. Run as root for full info."), INFO)
+        )
     yield Report(_("Ensuring no sysctl overrides"), status, notes=notes)
 
 
@@ -193,8 +197,8 @@ def audit_modprobe(state):
         for line in conf:
             words = line.strip().split(maxsplit=2)
             if words and words[0] in ("blacklist", "install"):
-                blocked_modules.append(words[1])
-    unwanted_modules = []
+                # /proc/modules uses underscores in place of hyphens
+                blocked_modules.append(words[1].replace("-", "_"))
     loaded_modules = loaded_kernel_modules()
     unwanted_modules = [mod for mod in blocked_modules if mod in loaded_modules]
     unwanted_modules.sort()
@@ -430,7 +434,7 @@ def audit_dns(state):
 
     # Parse `ujust dns-selector status` output.
     status_out = command_stdout(
-        "/usr/bin/python3", "/usr/libexec/secureblue/dns_selector.py", "status"
+        "/usr/bin/python3", "-Es", "/usr/libexec/secureblue/dns_selector.py", "status"
     )
     flags = {}
     for line in status_out.splitlines():
@@ -764,6 +768,7 @@ def audit_brew_auto_update():
 
 
 @audit
+@categorize(SKIP_IF_ROOT)
 def audit_groups():
     """Check whether user is in known groups with security implications."""
     user_groups = frozenset(command_stdout("groups").split())
@@ -881,6 +886,7 @@ def audit_xwayland(state):
 
 @audit
 @depends_on("audit_signed_image")
+@categorize(SKIP_IF_ROOT)
 def audit_thumbnailing(state):
     """Check whether thumbnailing is disabled."""
     thumbnailing_disabled = True
@@ -897,7 +903,8 @@ def audit_thumbnailing(state):
             thumbnailing_disabled = thumbnail_gsetting_output == "'never'"
         case Image.KINOITE:
             de = _("KDE Plasma")
-            dolphinrc_file = Path.home() / ".config/dolphinrc"
+            config_dir = get_config_dir()
+            dolphinrc_file = config_dir / "dolphinrc"
             if dolphinrc_file.exists():
                 config = configparser.ConfigParser(delimiters=("=",), allow_unnamed_section=True)
                 config.read(dolphinrc_file)
@@ -934,6 +941,7 @@ def audit_thumbnailing(state):
 
 @audit
 @depends_on("audit_signed_image")
+@categorize(SKIP_IF_ROOT)
 def audit_gnome_extensions(state):
     """Ensure GNOME user extensions are not allowed to be installed."""
     if state["image"] != Image.SILVERBLUE:
@@ -1034,84 +1042,48 @@ def audit_kde_ghns(state):
 
 
 @audit
-def audit_ld_preload():
-    """Ensure ld.so.preload exists and is readable only by root."""
-    status = PASS
-    notes = []
-    rec = None
+def audit_hardened_malloc():
+    """Ensure hardened_malloc is set to be preloaded in place of the default system malloc."""
     ld_so_preload = "/etc/ld.so.preload"
     try:
-        stat_result = os.stat(ld_so_preload)
-    except FileNotFoundError:
+        with open(ld_so_preload, encoding="utf8") as f:
+            preloads = f.read().strip().split()
+    except OSError as err:
         status = FAIL
-        notes.append(Note(_("The file {0} was not found.").format(ld_so_preload), FAIL))
+        note = Note(_("{0} could not be read: {1}").format(ld_so_preload, err.strerror), FAIL)
     else:
-        mode = stat.S_IMODE(stat_result.st_mode)
-        expected_mode = 0o600
-        if mode != expected_mode:
+        if preloads == ["libhardened_malloc.so", "libno_rlimit_as.so"]:
+            status = PASS
+            note = None
+        elif "libhardened_malloc.so" in preloads:
             status = WARN
-            notes.append(
-                Note(
-                    _("{0} has mode {1:o} (expected {2:o})").format(
-                        ld_so_preload, mode, expected_mode
-                    ),
-                    WARN,
-                )
+            note = Note(
+                _("hardened_malloc is enabled, but {0} has been modified.").format(ld_so_preload),
+                WARN,
             )
-        if stat_result.st_uid != 0:
+        elif "libhardened_malloc-light.so" in preloads:
+            status = WARN
+            note = Note(
+                _("The '{0}' variant of hardened_malloc is enabled.").format("light"),
+                WARN,
+            )
+        elif "libhardened_malloc-pkey.so" in preloads:
+            status = WARN
+            note = Note(_("The '{0}' variant of hardened_malloc is enabled.").format("pkey"), WARN)
+        else:
             status = FAIL
-            notes.append(Note(_("{0} is owned by a non-root user!").format(ld_so_preload), FAIL))
+            note = Note(_("hardened_malloc is not enabled."), FAIL)
+
     if status != PASS:
         rec_lines = [
             _("The file {0} has been modified or deleted.").format(ld_so_preload),
-            _("To reset it and enable hardened_malloc for system processes, run:"),
+            _("To reset it and enable hardened_malloc, run:"),
             f"$ run0 -i cp -p /usr/share/secureblue{ld_so_preload} {ld_so_preload}",
         ]
         rec = "\n".join(rec_lines)
-    yield Report(
-        _("Ensuring {0} has expected permissions").format("ld.so.preload"),
-        status,
-        notes=notes,
-        recs=rec,
-    )
-
-
-@audit
-def audit_hardened_malloc():
-    """Ensure hardened_malloc is set to be preloaded in place of the default system malloc."""
-    rec = None
-    ld_preload = os.environ.get("LD_PRELOAD")
-    preloads = [] if ld_preload is None else ld_preload.split()
-    expected_preloads = ["libhardened_malloc.so", "libno_rlimit_as.so"]
-    if preloads == expected_preloads:
-        status = PASS
-        note = None
-    elif "libhardened_malloc.so" in preloads:
-        status = WARN
-        note = Note(
-            _("{0} is set, but {1} has been modified.").format("hardened_malloc", "LD_PRELOAD"),
-            WARN,
-        )
-    elif "libhardened_malloc-light.so" in preloads:
-        status = WARN
-        note = Note(
-            _("The '{0}' variant of {1} has been set.").format("light", "hardened_malloc"), WARN
-        )
-    elif "libhardened_malloc-pkey.so" in preloads:
-        status = WARN
-        note = Note(
-            _("The '{0}' variant of {1} has been set.").format("pkey", "hardened_malloc"), WARN
-        )
     else:
-        status = FAIL
-        note = Note(_("{0} has not been set.").format("LD_PRELOAD=libhardened_malloc.so"), FAIL)
+        rec = None
 
-    if status != PASS:
-        rec = _("""The environment variable {0} has been modified or is unset.
-                Check that {1} has not been overridden in
-                {2} or related configuration files.""").format(
-            "LD_PRELOAD", "LD_PRELOAD=libhardened_malloc.so", "/etc/profile.d"
-        )
     yield Report(
         _("Ensuring hardened_malloc is set to be preloaded"),
         status,
@@ -1155,6 +1127,7 @@ def audit_secureboot():
 
 
 @audit
+@categorize(SKIP_IF_ROOT)
 def audit_bash_env_lockdown():
     """Ensure the current user's bash environment is locked down."""
     home_dir = Path.home()
@@ -1171,15 +1144,15 @@ def audit_bash_env_lockdown():
     ]
     unlocked_files = []
     for path in bash_env_paths:
-            if not path.exists() or (not path.is_file() and not path.is_dir()):
+        if not path.exists() or (not path.is_file() and not path.is_dir()):
+            unlocked_files.append(path)
+        else:
+            try:
+                immutable = "i" in command_stdout("lsattr", "-d", path).split()[0]
+            except subprocess.CalledProcessError:
+                immutable = False
+            if not immutable:
                 unlocked_files.append(path)
-            else:
-                try:
-                    immutable = "i" in command_stdout("lsattr", "-d", path).split()[0]
-                except subprocess.CalledProcessError:
-                    immutable = False
-                if not immutable:
-                    unlocked_files.append(path)
     if unlocked_files:
         status = FAIL
         rec_lines = [
@@ -1219,7 +1192,7 @@ def audit_print_services():
             note = _("CUPS (the printing service) is disabled, but unmasked.")
             notes.append(Note(note, INFO))
             recs.append("\n".join([note, _("To fix this, run:"), "$ ujust set-cups off"]))
-        case "masked":
+        case "masked" | "not-found":
             pass
         case _:
             status = status.downgrade_to(WARN)
@@ -1254,7 +1227,7 @@ def audit_print_services():
                     ]
                 )
             )
-        case "masked":
+        case "masked" | "not-found":
             pass
         case _:
             status = status.downgrade_to(FAIL)
@@ -1278,10 +1251,10 @@ def audit_webcam_module():
                     status = INFO
                     rec = "\n".join(
                         [
-                        _("Webcam module is blacklisted in {0} but is still enabled.").format(
-                            webcam_mod_file
-                        ),
-                        _("To disable it, you must reboot."),
+                            _("Webcam module is blacklisted in {0} but is still enabled.").format(
+                                webcam_mod_file
+                            ),
+                            _("To disable it, you must reboot."),
                         ]
                     )
                 else:
@@ -1290,9 +1263,9 @@ def audit_webcam_module():
         status = INFO
         rec = "\n".join(
             [
-            _("Webcam module is enabled."),
-            _("To disable it, run:"),
-            "$ ujust set-webcam-modules off",
+                _("Webcam module is enabled."),
+                _("To disable it, run:"),
+                "$ ujust set-webcam-modules off",
             ]
         )
     except PermissionError:
@@ -1332,8 +1305,8 @@ def audit_flatpak_remotes():
 
 
 @audit
-@categorize("flatpak")
 @depends_on("audit_modprobe", "audit_ptrace")
+@categorize("flatpak", SKIP_IF_ROOT)
 async def audit_flatpak_permissions(state):
     """Audit flatpak permissions."""
     if not command_succeeds("command", "-v", "flatpak"):
@@ -1383,10 +1356,41 @@ def handle_sigint(_sig, _frame):
     sys.exit(1)
 
 
+async def run_audit(
+    audit: Audit, *, json: bool = False, width: int = 80, running_as_root: bool = False
+) -> int:
+    """Run the audit, either in a human-readable format or as JSON."""
+    if running_as_root:
+        print(_("CAUTION: Some checks skipped due to running as root."), file=sys.stderr)
+        global_audit.skip.add(SKIP_IF_ROOT)
+
+    if json:
+        async for report_json in audit.run_json():
+            print(report_json)
+        return 0
+
+    error_occurred = False
+    async for check, err in audit.run(width=width):
+        print_err("\n" + _("*** Error in check '{0}' ***").format(check.name))
+        traceback.print_exception(err)
+        print_err("\n" + _("*** Continuing... ***"))
+        error_occurred = True
+
+    if audit_flatpak_permissions.done:
+        print(_("Use option '{0}' to skip flatpak recommendations.").format(bold("--skip flatpak")))
+
+    if running_as_root:
+        print(_("CAUTION: Some checks skipped due to running as root."), file=sys.stderr)
+
+    if error_occurred:
+        print_err("\n" + _("*** WARNING: Unexpected error occurred. ***"))
+
+    return 1 if error_occurred else 0
+
+
 async def main() -> int:
     """Main entry point. Parse command-line arguments and run audit."""
     signal.signal(signal.SIGINT, handle_sigint)
-    warn_if_root()
     parser = argparse.ArgumentParser(
         prog="ujust audit-secureblue",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -1413,25 +1417,9 @@ async def main() -> int:
     for name in skip:
         global_audit.skip.add(name)
 
-    if args.json:
-        async for report_json in global_audit.run_json():
-            print(report_json)
-        return 0
-
-    error_occurred = False
-    async for check, err in global_audit.run(width=get_width()):
-        print_err("\n" + _("*** Error in check '{0}' ***").format(check.name))
-        traceback.print_exception(err)
-        print_err("\n" + _("*** Continuing... ***"))
-        error_occurred = True
-
-    if "flatpak" not in global_audit.skip and command_succeeds("command", "-v", "flatpak"):
-        print(_("Use option '{0}' to skip flatpak recommendations.").format(bold("--skip flatpak")))
-    warn_if_root()
-    if error_occurred:
-        print_err("\n" + _("*** WARNING: Unexpected error occurred. ***"))
-        return 1
-    return 0
+    return await run_audit(
+        global_audit, json=args.json, width=get_width(), running_as_root=os.getuid() == 0
+    )
 
 
 if __name__ == "__main__":
