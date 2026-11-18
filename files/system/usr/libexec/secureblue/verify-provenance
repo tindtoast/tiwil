@@ -67,4 +67,4 @@ slsa-verifier build "${tempdir}/provenance.intoto.json" \
     --subject "${digest}" \
     --param "expected_source:${expected_source}" \
     --param "expected_branch:${branch}" \
-	--param "trusted_builders:[${expected_source}/.github/workflows/build-all.yml@refs/heads/${branch}]" hmm
+	--param "trusted_builders:[${expected_source}/.github/workflows/build-all.yml@refs/heads/${branch}]"

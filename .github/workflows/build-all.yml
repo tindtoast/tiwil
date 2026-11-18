@@ -8,7 +8,7 @@ permissions: {}
 
 on:
   schedule:
-    - cron: "40 5 * * *" # build at 5:40 UTC every day
+    - cron: "40 6 * * *" # build at 6:40 UTC every day
 
   push:
     branches-ignore: # don't rebuild for dependabot
@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   kinoite-main:
-    name: Build tiwil-kinoite
+    name: Build tiwil kinoite
     if: github.triggering_actor == 'tindtoast' || github.triggering_actor == 'github-actions[bot]' || github.event_name == 'schedule' || github.event_name == 'push'
     permissions:
       contents: read # Needed to pull the repo for the build
