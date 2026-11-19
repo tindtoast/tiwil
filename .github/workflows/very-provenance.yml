@@ -43,7 +43,7 @@ jobs:
 
           failed_images=()
           for image_name in "${images[@]}"; do
-            image_ref="ghcr.io/secureblue/${image_name}"
+            image_ref="ghcr.io/tindtoast/${image_name}"
             for tag in latest uki; do
               if [[ "${tag}" == uki && "${image_name}" =~ -(nvidia|zfs)- ]]; then
                 continue
@@ -57,9 +57,9 @@ jobs:
                 --require-signatures \
                 --signer 'sigstore(identityMatch=regex)::https://token.actions.githubusercontent.com::https://github\.com/slsa-framework/actions/\.github/workflows/attest_actions\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+' \
                 --subject "${digest}" \
-                --param 'expected_source:github.com/secureblue/secureblue' \
-                --param 'expected_branch:live' \
-                --param 'trusted_builders:[https://github.com/secureblue/secureblue/.github/workflows/build-all.yml@refs/heads/live]'
+                --param 'expected_source:github.com/tindtoast/tiwil' \
+                --param 'expected_branch:main' \
+                --param 'trusted_builders:[https://github.com/tindtoast/tiwil/.github/workflows/build-all.yml@refs/heads/main]'
               status="$?"
               set -e
               if [[ "${status}" != 0 ]]; then
