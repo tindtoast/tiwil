@@ -139,7 +139,7 @@
 				{
 					"type": "sigstoreSigned",
 					"keyPath": "/usr/share/pki/containers/tindtoast-tiwil.pub",
-					"signedIndentity": {
+					"signedIdentity": {
 						"type": "matchRepository"
 					}
 				}
