@@ -1,0 +1,3 @@
+docker:
+  ${IMAGE_REGISTRY}:
+    use-sigstore-attachments: true

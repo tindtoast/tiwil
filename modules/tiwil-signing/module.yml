@@ -1,0 +1,4 @@
+name: tiwil-signing
+shortdesc: It installs main signing policies + custom tiwil policy for cosign image verification with rpm-ostree and bootc.
+example: |
+  type: tiwil-signing # this sets up the proper policy & signing files for signed images to work fully
