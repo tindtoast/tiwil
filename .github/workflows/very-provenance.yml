@@ -44,10 +44,7 @@ jobs:
           failed_images=()
           for image_name in "${images[@]}"; do
             image_ref="ghcr.io/tindtoast/${image_name}"
-            for tag in latest uki; do
-              if [[ "${tag}" == uki && "${image_name}" =~ -(nvidia|zfs)- ]]; then
-                continue
-              fi
+            for tag in latest; do
               digest=$(oras resolve "${image_ref}:${tag}")
               echo "Verifying provenance for ${image_ref}@${digest}..."
               oras pull "${image_ref}:${digest/:/-}-provenance"
