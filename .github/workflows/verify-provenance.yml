@@ -37,29 +37,68 @@ jobs:
       - name: Verify provenance
         shell: bash
         run: |
+          set -euo pipefail
           images=(
             tiwil-kinoite
           )
+
+          verify_provenance() {
+            local image_ref="$1"
+            local tag="$2"
+            local tempdir
+            tempdir=$(mktemp -d)
+            trap 'rm -rf "${tempdir}"' RETURN
+
+            local referrers
+            referrers=$(
+              oras discover --format json \
+                --artifact-type 'application/vnd.in-toto.provenance+dsse' \
+                "${image_ref}:${tag}"
+            ) || return 1
+
+            local digest
+            digest=$(jq -er '.digest' <<<"${referrers}") || return 1
+
+            local provenance_digest
+            provenance_digest=$(jq -er '.referrers[].digest' <<<"${referrers}") || return 1
+            if [[ -z "${provenance_digest}" ]]; then
+              echo "Provenance not found for ${image_ref}@${digest}"
+              return 1
+            elif [[ "${provenance_digest}" == *$'\n'* ]]; then
+              echo "More than one provenance artifact found for ${image_ref}@${digest}"
+              return 1
+            fi
+
+            # Confirm that provenance can also be pulled by tag
+            local prov_by_tag="${image_ref}:${digest/:/-}-provenance"
+            local prov_tag_digest
+            prov_tag_digest=$(oras resolve "${prov_by_tag}") \
+              || { echo "Unable to resolve provenance by tag: ${prov_by_tag}"; return 1; }
+            if [[ "${prov_tag_digest}" != "${provenance_digest}" ]]; then
+              echo "Provenance digest mismatch for ${prov_by_tag}"
+              return 1
+            fi
+
+            echo "Verifying provenance for ${image_ref}@${digest}..."
+            oras pull -o "${tempdir}" "${image_ref}@${provenance_digest}" || return 1
+            slsa-verifier build "${tempdir}/provenance.intoto.json" \
+              --level 3 \
+              --require-signatures \
+              --signer 'sigstore(identityMatch=regex)::https://token.actions.githubusercontent.com::https://github\.com/slsa-framework/actions/\.github/workflows/attest_actions\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+' \
+              --subject "${digest}" \
+              --param 'expected_source:github.com/tindtoast/tiwil' \
+              --param 'expected_branch:main' \
+              --param 'trusted_builders:[https://github.com/tindtoast/tiwil/.github/workflows/build-all.yml@refs/heads/live]'
+          }
 
           failed_images=()
           for image_name in "${images[@]}"; do
             image_ref="ghcr.io/tindtoast/${image_name}"
             for tag in latest; do
-              digest=$(oras resolve "${image_ref}:${tag}")
-              echo "Verifying provenance for ${image_ref}@${digest}..."
-              oras pull "${image_ref}:${digest/:/-}-provenance"
-              set +e
-              slsa-verifier build provenance.intoto.json \
-                --level 3 \
-                --require-signatures \
-                --signer 'sigstore(identityMatch=regex)::https://token.actions.githubusercontent.com::https://github\.com/slsa-framework/actions/\.github/workflows/attest_actions\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+' \
-                --subject "${digest}" \
-                --param 'expected_source:github.com/tindtoast/tiwil' \
-                --param 'expected_branch:main' \
-                --param 'trusted_builders:[https://github.com/tindtoast/tiwil/.github/workflows/build-all.yml@refs/heads/main]'
-              status="$?"
-              set -e
-              if [[ "${status}" != 0 ]]; then
+              if [[ "${tag}" == uki && "${image_name}" =~ -(nvidia|zfs)- ]]; then
+                continue
+              fi
+              if ! verify_provenance "${image_ref}" "${tag}"; then
                 failed_images+=("${image_name}:${tag}")
                 echo "FAIL: Provenance verification failed for ${image_name}:${tag}"
               fi
