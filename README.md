@@ -1,6 +1,6 @@
 # tiwil &nbsp; 
-[![bluebuild build badge](https://github.com/tindtoast/tiwil/actions/workflows/build.yml/badge.svg)](https://github.com/tindtoast/tiwil/actions/workflows/build.yml)
-[![provenance verification](https://github.com/tindtoast/tiwil/actions/workflows/provenance.yml/badge.svg)](https://github.com/tindtoast/tiwil/actions/workflows/provenance.yml)
+[![bluebuild build badge](https://github.com/tindtoast/tiwil/actions/workflows/build-all.yml/badge.svg)](https://github.com/tindtoast/tiwil/actions/workflows/build.yml)
+[![provenance verification](https://github.com/tindtoast/tiwil/actions/workflows/verify-provenance.yml/badge.svg)](https://github.com/tindtoast/tiwil/actions/workflows/provenance.yml)
 
 *A customized image of secureblue built by BlueBuild*
 
