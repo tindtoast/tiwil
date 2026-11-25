@@ -88,7 +88,7 @@ jobs:
               --subject "${image_digest}" \
               --param 'expected_source:github.com/tindtoast/tiwil' \
               --param 'expected_branch:main' \
-              --param 'trusted_builders:[https://github.com/tindtoast/tiwil/.github/workflows/build-all.yml@refs/heads/live]'
+              --param 'trusted_builders:[https://github.com/tindtoast/tiwil/.github/workflows/build-all.yml@refs/heads/main]'
           }
 
           failed_images=()
