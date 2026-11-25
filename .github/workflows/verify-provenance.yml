@@ -95,9 +95,6 @@ jobs:
           for image_name in "${images[@]}"; do
             image_ref="ghcr.io/tindtoast/${image_name}"
             for tag in latest; do
-              if [[ "${tag}" == uki && "${image_name}" =~ -(nvidia|zfs)- ]]; then
-                continue
-              fi
               if ! verify_provenance "${image_ref}" "${tag}"; then
                 failed_images+=("${image_name}:${tag}")
                 echo "FAIL: Provenance verification failed for ${image_name}:${tag}"
