@@ -29,7 +29,7 @@ jobs:
           version: 1.3.6
 
       - name: Install slsa-verifier
-        uses: slsa-framework/actions/install/verifier@3efdf6f2112b1170cb369442620788752df11bca # v0.2.0
+        uses: slsa-framework/actions/install/verifier@4b2114c4378d0f2bfb0ae99dbb6958bfc44d3a98 # v0.2.1
         with:
           # renovate: datasource=github-releases depName=slsa-framework/verifier
           version: v0.1.1
