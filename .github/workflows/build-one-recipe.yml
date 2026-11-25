@@ -326,7 +326,7 @@ jobs:
       actions: read # to detect the Github Actions environment
       contents: read
       id-token: write # to create OIDC tokens for signing
-    uses: slsa-framework/actions/.github/workflows/attest_actions.yml@v0.2.0 # zizmor: ignore[unpinned-uses]
+    uses: slsa-framework/actions/.github/workflows/attest_actions.yml@v0.2.1 # zizmor: ignore[unpinned-uses]
     with:
       build-from-source: false
       # renovate: datasource=github-releases depName=slsa-framework/attester
